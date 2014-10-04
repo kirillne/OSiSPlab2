@@ -1,5 +1,6 @@
 #pragma once
 #include <queue>
+#include <time.h>
 #include "windows.h"
 
 
@@ -11,10 +12,23 @@ class ThreadPool
 public:
 	ThreadPool(int);
 	~ThreadPool(void);
-	void AddFunction(FUNC func);
+	void AddFunction(FUNC func, int argument);
 private:
 	int threadsCount;
-	std::queue<FUNC> threadQueue;
+	std::queue<ThreadArgument*> funcQueue;
 	HANDLE * threads;
+	DWORD WINAPI ThreadProc(LPVOID lpParam);
+	HANDLE hSemaphore;
+	time_t functionAddTime;
+	CRITICAL_SECTION criticalSection;
+	bool* busyThreads;
+	int busyThreadsCount;
+};
+
+struct ThreadArgument
+{
+	int ThreadNumber;
+	FUNC WorkFunc;
+	int WorkFuncArgument;
 };
 
