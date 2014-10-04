@@ -3,10 +3,12 @@
 
 
 
-ThreadPool::ThreadPool(int threadsCount = 3)
+ThreadPool::ThreadPool(int threadsCount = 3, std::ostream* log)
 {
 	if(threadsCount > 0)
 	{
+		logStream = log;
+		
 		this->threadsCount = threadsCount;
 		threads = (HANDLE *)calloc(threadsCount, sizeof(HANDLE));
 		busyThreads = (bool *)calloc(threadsCount, sizeof(HANDLE));
@@ -25,6 +27,7 @@ ThreadPool::ThreadPool(int threadsCount = 3)
 			threadArgument->WorkFuncArgument = 0;
 			threads[i] = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)EmptyProc,(LPVOID)threadArgument, 0, NULL);
 		}
+		*logStream << "Created " << threadsCount << " threads.";
 	}
 }
 
@@ -37,31 +40,12 @@ DWORD WINAPI ThreadPool::ThreadProc(LPVOID lpParam)
 {
 	ThreadArgument* threadArgument = (ThreadArgument*)lpParam;
 	threadArgument->WorkFunc(&threadArgument->WorkFuncArgument);
-
+	
 	while (true)
 	{
 		if( WaitForSingleObject(hSemaphore,10000) == WAIT_TIMEOUT)
 		{
-			if(difftime(time(NULL), functionAddTime) > 30)
-			{
-				EnterCriticalSection(&criticalSection);
-				{
-					int threadsToKill = (threadsCount - busyThreadsCount)/2;
-					for (int i = 0; i < threadsCount && threadsToKill > 0; ++i)
-					{
-						if(!busyThreads[i])
-						{
-							threadsToKill--;
-							busyThreadsCount++;
-							busyThreads[i] = true;
-							TerminateThread(threads[i],0);
-							threads[i] = NULL;
-						}
-					}
-				}
-				LeaveCriticalSection(&criticalSection);
-
-			}
+			DeleteUnusedThreads(threadArgument);
 		}
 		else
 		{
@@ -72,11 +56,20 @@ DWORD WINAPI ThreadPool::ThreadProc(LPVOID lpParam)
 				newArgument = funcQueue.front();
 				busyThreadsCount++;
 				busyThreads[threadArgument->ThreadNumber] = true;
+				*logStream << "Thread "<<  threadArgument->ThreadNumber <<": start new function.";
 			}
 			LeaveCriticalSection(&criticalSection);
 
 			newArgument->ThreadNumber = threadArgument->ThreadNumber;
-			newArgument->WorkFunc(&newArgument->WorkFuncArgument);
+			try
+			{
+				newArgument->WorkFunc(&newArgument->WorkFuncArgument);	
+			}
+			catch (const std::exception& ex)
+			{
+				*logStream << "Thread "<<  threadArgument->ThreadNumber <<": throwed " << (const char*)ex.what << ".";
+			}
+			
 
 			EnterCriticalSection(&criticalSection);
 			{
@@ -90,6 +83,33 @@ DWORD WINAPI ThreadPool::ThreadProc(LPVOID lpParam)
 	return 0;
 }
 
+void ThreadPool::DeleteUnusedThreads(ThreadArgument* threadArgument )
+{
+	if(difftime(time(NULL), functionAddTime) > 30)
+	{
+		EnterCriticalSection(&criticalSection);
+		{
+			busyThreads[threadArgument->ThreadNumber] = true;
+			int threadsToKill = (threadsCount - busyThreadsCount)/2;
+			for (int i = 0; i < threadsCount && threadsToKill > 0; ++i)
+			{
+				if(!busyThreads[i])
+				{
+					threadsToKill--;
+					busyThreadsCount++;
+					busyThreads[i] = true;
+					TerminateThread(threads[i],0);
+					threads[i] = NULL;
+					*logStream << "Thread "<<  i <<": deleted.";
+				}
+			}
+			busyThreads[threadArgument->ThreadNumber] = false;
+		}
+		LeaveCriticalSection(&criticalSection);
+	}
+}
+
+
 void ThreadPool::AddFunction(FUNC func, int argument)
 {
 	ThreadArgument* threadArgument = (ThreadArgument*) HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY,
@@ -99,15 +119,22 @@ void ThreadPool::AddFunction(FUNC func, int argument)
 	funcQueue.push(threadArgument);
 	functionAddTime = time(NULL);
 	ReleaseSemaphore(hSemaphore,1,NULL);
+	*logStream << "New function added.";
+			
 }
 
 ThreadPool::~ThreadPool(void)
 {
-	//TODO: Delete funcQueue
-	//TODO: Delete threads
-	//TODO: Delete semaphore
-	//TODO: Delete criticalSection
-	//TODO: Delete busyTreads
-
+	for (int i = 0; i < threadsCount; ++i)
+	{
+		if(threads[i] != NULL)
+		{
+			TerminateThread(threads[i],0);
+		}
+	}
+	free(threads);
+	free(busyThreads);
+	DeleteCriticalSection(&criticalSection);
+	CloseHandle(hSemaphore);
 }
 
