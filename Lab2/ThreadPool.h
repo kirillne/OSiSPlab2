@@ -5,9 +5,13 @@
 #include "windows.h"
 
 
-typedef DWORD (WINAPI *FUNC)(LPVOID lpParam);
+typedef int (*FUNC)(int param);
 
-
+struct FuncForThread
+{
+	FUNC WorkFunc;
+	int WorkFuncArgument;
+};
 
 class ThreadPool
 {
@@ -16,11 +20,12 @@ public:
 	~ThreadPool(void);
 	void AddFunction(FUNC func, int argument);
 	DWORD WINAPI ThreadProc(LPVOID lpParam);
+	
 private:
 	int threadsCount;
-	std::queue<FUNC> funcQueue;
+	std::queue<FuncForThread*> funcQueue;
 	HANDLE * threads;
-	
+	void DoFunction(int threadNumber);
 	void DeleteUnusedThreads(int threadNumber);
 	HANDLE hSemaphore;
 	time_t functionAddTime;
@@ -30,12 +35,11 @@ private:
 	std::ostream* logStream;
 };
 
-struct ThreadArgument
+struct StartThreadArgument
 {
 	int ThreadNumber;
-	FUNC WorkFunc;
-	int WorkFuncArgument;
 	ThreadPool* pool;
 };
+
 
 
