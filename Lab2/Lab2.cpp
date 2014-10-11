@@ -10,13 +10,14 @@
 
 int  Sum(int param)
 {
-	int sum = 0;
+	/*int sum = 0;
 	for (int i = 0; i < param; ++i)
 	{
-		sum += i;
-	}
-	Sleep(3000);
-	return sum;
+	sum += i;
+	}*/
+	std::cout << param;
+	Sleep(param*1000);
+	return 0;
 }
 
 int Error(int param)
@@ -24,7 +25,7 @@ int Error(int param)
 	Sleep(2000);
 	int zero = 0;
 	//int a = 1/zero;
-	throw new std::exception("Exception");
+	throw std::exception("Exception");
 	std::cout << "Error done\n";
 	return 0;
 }
@@ -42,7 +43,7 @@ int _tmain(int argc, _TCHAR* argv[])
 	std::ofstream ofs("log.txt");
 	std::ostream* log = &std::cout;
 	std::cin >> logCommand;
-	if(logCommand == 0)
+	if(logCommand  == 0)
 	{
 		ofs.close();
 	}
@@ -57,13 +58,19 @@ int _tmain(int argc, _TCHAR* argv[])
 	ThreadPool* pool = new ThreadPool(threadsCount, log);
 	while (true)
 	{
-		char command;
-		std::cin >> command;
+		char buf[20];
+		gets_s(buf,20);
+		pool->AddFunction(Sum,rand() % 60);
+		//char command;
+		/*std::cin >> command;
 		switch (command)
 		{
+		case '\n':
+
+		break;
 		case 'a':
-			pool->AddFunction(Sum,1);
-			break;
+		pool->AddFunction(Sum,1);
+		break;
 		case '1':
 		case '2':
 		case '3':
@@ -73,22 +80,22 @@ int _tmain(int argc, _TCHAR* argv[])
 		case '7':
 		case '8':
 		case '9':
-			pool->AddFunction(Sum,command - '0');
-			break;
+		pool->AddFunction(Sum,command - '0');
+		break;
 		case 'e':
-			pool->AddFunction(Error,0);
-			break;
+		pool->AddFunction(Error,0);
+		break;
 		case 'l':
-			pool->AddFunction(Long,0);
-			break;
+		pool->AddFunction(Long,0);
+		break;
 		case 'c':
-			delete pool;
-			if(logCommand != 0)
-			{
-				ofs.close();
-			}
-			return 0;
+		delete pool;
+		if(logCommand != 0)
+		{
+		ofs.close();
 		}
+		return 0;
+		}*/
 	}
 
 }

@@ -13,6 +13,11 @@ struct FuncForThread
 	int WorkFuncArgument;
 };
 
+enum ThreadState
+{
+	TS_FREE, TS_BUSY, TS_DELETED
+};
+
 class ThreadPool
 {
 public:
@@ -27,11 +32,14 @@ private:
 	HANDLE * threads;
 	void DoFunction(int threadNumber);
 	void DeleteUnusedThreads(int threadNumber);
+	void RecreateThread();
+	void NewThread(int i);
 	HANDLE hSemaphore;
 	time_t functionAddTime;
 	CRITICAL_SECTION criticalSection;
-	bool* busyThreads;
+	ThreadState* threadsStates;
 	int busyThreadsCount;
+	int deletedThreadsCount;
 	std::ostream* logStream;
 };
 

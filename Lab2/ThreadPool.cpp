@@ -18,8 +18,9 @@ ThreadPool::ThreadPool(int threadsCount = 3, std::ostream* log = &std::cout)
 
 		this->threadsCount = threadsCount;
 		threads = (HANDLE *)calloc(threadsCount, sizeof(HANDLE));
-		busyThreads = (bool *)calloc(threadsCount, sizeof(HANDLE)); //if busyThreads[i] == true => thread have some function
+		threadsStates = (ThreadState *)calloc(threadsCount, sizeof(ThreadState)); //if threadsStates[i] == TS_BUSY => thread have some function
 		busyThreadsCount = 0;
+		deletedThreadsCount = 0;
 
 		hSemaphore = CreateSemaphore(NULL,0,100,NULL);
 		functionAddTime = time(NULL); //time when function was added last time
@@ -27,17 +28,22 @@ ThreadPool::ThreadPool(int threadsCount = 3, std::ostream* log = &std::cout)
 
 		for(int i = 0; i < threadsCount; i++)
 		{
-			busyThreads[i] = false;
-			StartThreadArgument* threadArgument = (StartThreadArgument*) HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY,
-				sizeof(StartThreadArgument));
-			threadArgument->ThreadNumber = i;
-			threadArgument->pool = this;
-			threads[i] = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)StartProc,(LPVOID)threadArgument, 0, NULL);
+			NewThread(i);
 		}
 		*logStream << "Created " << threadsCount << " threads.\n";
 	}
 }
 
+void ThreadPool::NewThread(int i)
+{
+	threadsStates[i] = TS_FREE;
+	StartThreadArgument* threadArgument = (StartThreadArgument*) HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY,
+		sizeof(StartThreadArgument));
+	threadArgument->ThreadNumber = i;
+	threadArgument->pool = this;
+	threads[i] = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)StartProc,(LPVOID)threadArgument, 0, NULL);
+
+}
 
 
 DWORD WINAPI ThreadPool::ThreadProc(LPVOID lpParam)
@@ -68,7 +74,7 @@ void ThreadPool::DoFunction(int threadNumber )
 		newArgument = funcQueue.front();
 		funcQueue.pop();
 		busyThreadsCount++;  //Mark thread as busy
-		busyThreads[threadNumber] = true;
+		threadsStates[threadNumber] = TS_BUSY;
 		*logStream << "Thread "<<  threadNumber <<": start new function.\n";
 	}
 	LeaveCriticalSection(&criticalSection);
@@ -94,39 +100,54 @@ void ThreadPool::DoFunction(int threadNumber )
 	EnterCriticalSection(&criticalSection);
 	{
 		busyThreadsCount--;
-		busyThreads[threadNumber] = false;
+		threadsStates[threadNumber] = TS_FREE;
 	}
 	LeaveCriticalSection(&criticalSection);
 }
 
 void ThreadPool::DeleteUnusedThreads(int threadNumber )
 {
-	EnterCriticalSection(&criticalSection);
+	if( TryEnterCriticalSection(&criticalSection))
 	{
 		if(difftime(time(NULL), functionAddTime) > 10)
 		{
 
-			busyThreads[threadNumber] = true; //Thread can't delete itsalfe 
+			threadsStates[threadNumber] = TS_BUSY; //Thread can't delete itsalfe 
 			int threadsToKill = (threadsCount - busyThreadsCount)/2;
 			for (int i = 0; i < threadsCount && threadsToKill > 0; ++i)
 			{
-				if(!busyThreads[i])
+				if(threadsStates[i] == TS_FREE)
 				{
 					threadsToKill--;
-					busyThreadsCount++;
-					busyThreads[i] = true;
+					deletedThreadsCount++;
+					threadsStates[i] = TS_DELETED;
 					TerminateThread(threads[i],0);
 					threads[i] = NULL;
 					*logStream << "Thread "<<  i <<": deleted.\n";
 				}
 			}
-			busyThreads[threadNumber] = false;
+			threadsStates[threadNumber] = TS_FREE;
 			functionAddTime = time(NULL);
 
 		}
+
+		LeaveCriticalSection(&criticalSection);
 	}
-	LeaveCriticalSection(&criticalSection);
 }
+
+void ThreadPool::RecreateThread()
+{
+	int newThreadNumber = 0;
+	while(threadsStates[newThreadNumber] != TS_DELETED) 
+	{
+		newThreadNumber++;
+	}
+	NewThread(newThreadNumber);
+	*logStream << "Thread "<< newThreadNumber <<" recreated.\n";
+	deletedThreadsCount--;
+}
+
+
 
 
 void ThreadPool::AddFunction(FUNC func, int argument)
@@ -135,14 +156,21 @@ void ThreadPool::AddFunction(FUNC func, int argument)
 		sizeof(FuncForThread));
 	threadArgument->WorkFunc = func;
 	threadArgument->WorkFuncArgument = argument;
-	funcQueue.push(threadArgument);
-	functionAddTime = time(NULL);
-	ReleaseSemaphore(hSemaphore,1,NULL);
-	if(busyThreadsCount == threadsCount)
+	EnterCriticalSection(&criticalSection);
 	{
-		*logStream << "There are no free threards in the pool.\n";
+		funcQueue.push(threadArgument);
+		functionAddTime = time(NULL);
+		ReleaseSemaphore(hSemaphore,1,NULL);
+		if(busyThreadsCount + deletedThreadsCount == threadsCount)
+		{
+			*logStream << "There are no free threads in the pool.\n";
+			if(deletedThreadsCount != 0)
+			{
+				RecreateThread();
+			}
+		}
 	}
-
+	LeaveCriticalSection(&criticalSection);
 	*logStream << "New function added.\n";
 
 }
@@ -157,7 +185,7 @@ ThreadPool::~ThreadPool(void)
 		}
 	}
 	free(threads);
-	free(busyThreads);
+	free(threadsStates);
 	DeleteCriticalSection(&criticalSection);
 	CloseHandle(hSemaphore);
 }
