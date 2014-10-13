@@ -25,7 +25,7 @@ int Error(int param)
 	Sleep(2000);
 	int zero = 0;
 	//int a = 1/zero;
-	throw std::exception("Exception");
+	throw std::exception("Exception in Error function");
 	std::cout << "Error done\n";
 	return 0;
 }
